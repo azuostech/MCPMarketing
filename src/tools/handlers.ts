@@ -1,6 +1,8 @@
 import { getFieldCatalog, getGoogleAdsConfig, listGoogleAdsAccounts, queryGoogleAds } from '../lib/googleAds.js';
 import { mockAccounts, mockDataSources, mockFields, mockQueryResult } from '../lib/mockData.js';
 
+const pendingResults = new Map<string, unknown>();
+
 export async function handleDataSourceDiscovery(search?: string) {
   const filtered = !search
     ? mockDataSources
@@ -42,19 +44,43 @@ export async function handleDataQuery(input: {
   dateRange: { start: string; end: string };
   filters?: string[];
 }) {
-  if (input.source === 'AW') {
-    const config = getGoogleAdsConfig();
-    return queryGoogleAds(config, input);
+  const result = input.source === 'AW'
+    ? await queryGoogleAds(getGoogleAdsConfig(), input)
+    : {
+        ...mockQueryResult,
+        requested: {
+          source: input.source,
+          accounts: input.accounts,
+          fields: input.fields,
+          dateRange: input.dateRange,
+          filters: input.filters ?? []
+        }
+      };
+
+  const scheduleId = `schedule-${Date.now()}`;
+  pendingResults.set(scheduleId, result);
+
+  return {
+    ...result,
+    scheduleId,
+    status: 'completed'
+  };
+}
+
+export async function handleGetQueryResults(scheduleId: string) {
+  const cached = pendingResults.get(scheduleId);
+
+  if (!cached) {
+    return {
+      scheduleId,
+      status: 'not_found',
+      message: 'No query result found for this schedule ID.'
+    };
   }
 
   return {
-    ...mockQueryResult,
-    requested: {
-      source: input.source,
-      accounts: input.accounts,
-      fields: input.fields,
-      dateRange: input.dateRange,
-      filters: input.filters ?? []
-    }
+    scheduleId,
+    status: 'completed',
+    result: cached
   };
 }

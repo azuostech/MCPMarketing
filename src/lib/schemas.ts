@@ -23,3 +23,7 @@ export const DataQueryInputSchema = z.object({
   }).describe('Date range in YYYY-MM-DD format'),
   filters: z.array(z.string()).optional().describe('Optional filter expressions like "clicks > 10"')
 });
+
+export const GetQueryResultsInputSchema = z.object({
+  scheduleId: z.string().describe('Identifier returned by the data_query tool when the query is async')
+});

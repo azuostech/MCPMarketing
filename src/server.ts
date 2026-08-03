@@ -13,13 +13,15 @@ import {
   AccountsDiscoveryInputSchema,
   DataQueryInputSchema,
   DataSourceDiscoveryInputSchema,
-  FieldDiscoveryInputSchema
+  FieldDiscoveryInputSchema,
+  GetQueryResultsInputSchema
 } from './lib/schemas.js';
 import {
   handleAccountsDiscovery,
   handleDataQuery,
   handleDataSourceDiscovery,
-  handleFieldDiscovery
+  handleFieldDiscovery,
+  handleGetQueryResults
 } from './tools/handlers.js';
 
 dotenv.config();
@@ -81,6 +83,11 @@ const tools: Tool[] = [
     name: 'data_query',
     description: 'Execute a marketing analytics query using the selected source, accounts, fields, and date range',
     inputSchema: toMcpInputSchema(DataQueryInputSchema)
+  },
+  {
+    name: 'get_query_results',
+    description: 'Retrieve the result of a previously executed query by schedule ID',
+    inputSchema: toMcpInputSchema(GetQueryResultsInputSchema)
   }
 ];
 
@@ -109,6 +116,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'data_query': {
         const parsed = DataQueryInputSchema.parse(args ?? {});
         const result = await handleDataQuery(parsed);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'get_query_results': {
+        const parsed = GetQueryResultsInputSchema.parse(args ?? {});
+        const result = await handleGetQueryResults(parsed.scheduleId);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       default:
