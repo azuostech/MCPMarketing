@@ -24,7 +24,7 @@ import {
 
 dotenv.config();
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 const toMcpInputSchema = (schema: z.ZodTypeAny) => {
@@ -173,7 +173,11 @@ app.get('/health', (_req: any, res: any) => {
   res.json({ ok: true, service: 'mcp-marketing-analytics' });
 });
 
-const port = Number(process.env.PORT ?? 3000);
-app.listen(port, '0.0.0.0', () => {
-  console.log(`MCP Marketing Analytics HTTP server listening on port ${port}`);
-});
+if (process.env.VERCEL !== '1') {
+  const port = Number(process.env.PORT ?? 3000);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`MCP Marketing Analytics HTTP server listening on port ${port}`);
+  });
+}
+
+export default app;
