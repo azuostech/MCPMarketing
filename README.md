@@ -115,6 +115,8 @@ GOOGLE_ADS_CLIENT_SECRET=
 GOOGLE_ADS_REFRESH_TOKEN=
 GOOGLE_ADS_CUSTOMER_ID=
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=
+GOOGLE_ADS_API_VERSION=v25
+GOOGLE_ADS_MOCK_MODE=false
 ```
 
 ### OAuth 2.0 setup for Google Ads
@@ -137,6 +139,8 @@ GOOGLE_ADS_LOGIN_CUSTOMER_ID=
 - `GOOGLE_ADS_REFRESH_TOKEN`: refresh token obtained after the OAuth flow.
 - `GOOGLE_ADS_CUSTOMER_ID`: the Google Ads customer ID you want to query.
 - `GOOGLE_ADS_LOGIN_CUSTOMER_ID`: the manager/customer ID used for login context, often the same as the customer ID.
+- `GOOGLE_ADS_API_VERSION`: Google Ads API version; defaults to `v25`.
+- `GOOGLE_ADS_MOCK_MODE`: opt-in demo data mode; keep `false` for the real integration.
 
 ### Local OAuth helper
 
@@ -170,6 +174,8 @@ Then exchange the returned authorization code for a refresh token using the loca
 - The current implementation uses mock data whenever the required credentials are missing.
 - Once the credentials are present, the server will attempt to call the real Google Ads API endpoints.
 
-## Notes
+## Connection diagnostics
 
-The current implementation uses mock responses automatically when the Google Ads credentials are missing, so the MCP structure can be exercised immediately.
+Use the `google_ads_connection_status` MCP tool to verify production configuration
+without returning credential values. Missing credentials now produce a clear error;
+mock responses are used only when `GOOGLE_ADS_MOCK_MODE=true`.

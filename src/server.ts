@@ -8,13 +8,14 @@ import {
   Tool
 } from '@modelcontextprotocol/sdk/types.js';
 import dotenv from 'dotenv';
-import { z } from 'zod';
+import { toMcpInputSchema } from './lib/mcpSchema.js';
 import {
   AccountsDiscoveryInputSchema,
   DataQueryInputSchema,
   DataSourceDiscoveryInputSchema,
   FieldDiscoveryInputSchema,
   GetQueryResultsInputSchema,
+  GoogleAdsConnectionStatusInputSchema,
   HealthCheckInputSchema
 } from './lib/schemas.js';
 import {
@@ -23,6 +24,7 @@ import {
   handleDataSourceDiscovery,
   handleFieldDiscovery,
   handleGetQueryResults,
+  handleGoogleAdsConnectionStatus,
   handleHealthCheck
 } from './tools/handlers.js';
 
@@ -40,32 +42,12 @@ const server = new Server(
   }
 );
 
-const toMcpInputSchema = (schema: z.ZodTypeAny) => {
-  const shape = schema instanceof z.ZodObject ? schema.shape : {};
-  const properties: Record<string, { type: string }> = {};
-
-  for (const [key, value] of Object.entries(shape)) {
-    if (value instanceof z.ZodString) {
-      properties[key] = { type: 'string' };
-    } else if (value instanceof z.ZodArray) {
-      properties[key] = { type: 'array' };
-    } else if (value instanceof z.ZodNumber) {
-      properties[key] = { type: 'number' };
-    } else if (value instanceof z.ZodBoolean) {
-      properties[key] = { type: 'boolean' };
-    } else {
-      properties[key] = { type: 'object' };
-    }
-  }
-
-  return {
-    type: 'object' as const,
-    properties,
-    required: Object.keys(shape).filter((key) => !(shape[key] instanceof z.ZodOptional))
-  };
-};
-
 const tools: Tool[] = [
+  {
+    name: 'google_ads_connection_status',
+    description: 'Check whether Google Ads credentials are configured without exposing secret values',
+    inputSchema: toMcpInputSchema(GoogleAdsConnectionStatusInputSchema)
+  },
   {
     name: 'data_source_discovery',
     description: 'List available marketing data sources and their configuration requirements',
@@ -132,6 +114,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       case 'health_check': {
         const result = await handleHealthCheck();
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'google_ads_connection_status': {
+        const result = await handleGoogleAdsConnectionStatus();
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       default:

@@ -29,3 +29,5 @@ export const GetQueryResultsInputSchema = z.object({
 });
 
 export const HealthCheckInputSchema = z.object({}).strict();
+
+export const GoogleAdsConnectionStatusInputSchema = z.object({}).strict();

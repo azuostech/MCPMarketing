@@ -1,4 +1,10 @@
-import { getFieldCatalog, getGoogleAdsConfig, listGoogleAdsAccounts, queryGoogleAds } from '../lib/googleAds.js';
+import {
+  getFieldCatalog,
+  getGoogleAdsConfig,
+  getGoogleAdsConnectionStatus,
+  listGoogleAdsAccounts,
+  queryGoogleAds
+} from '../lib/googleAds.js';
 import { getServerHealth } from '../lib/health.js';
 import { mockAccounts, mockDataSources, mockFields, mockQueryResult } from '../lib/mockData.js';
 
@@ -88,4 +94,8 @@ export async function handleGetQueryResults(scheduleId: string) {
 
 export async function handleHealthCheck() {
   return getServerHealth();
+}
+
+export async function handleGoogleAdsConnectionStatus() {
+  return getGoogleAdsConnectionStatus();
 }
