@@ -36,6 +36,74 @@ Run the inspector against the local server:
 npx @modelcontextprotocol/inspector node dist/server.js
 ```
 
+### Example tool calls
+
+Health check:
+```json
+{
+  "name": "health_check",
+  "arguments": {}
+}
+```
+
+Discover sources:
+```json
+{
+  "name": "data_source_discovery",
+  "arguments": {
+    "search": "google"
+  }
+}
+```
+
+Discover accounts:
+```json
+{
+  "name": "accounts_discovery",
+  "arguments": {
+    "source": "AW"
+  }
+}
+```
+
+Discover fields:
+```json
+{
+  "name": "field_discovery",
+  "arguments": {
+    "source": "AW",
+    "search": "cost"
+  }
+}
+```
+
+Run a query:
+```json
+{
+  "name": "data_query",
+  "arguments": {
+    "source": "AW",
+    "accounts": ["1234567890"],
+    "fields": ["date", "campaign_name", "clicks", "cost"],
+    "dateRange": {
+      "start": "2026-07-01",
+      "end": "2026-07-07"
+    },
+    "filters": ["clicks > 100"]
+  }
+}
+```
+
+Retrieve query result:
+```json
+{
+  "name": "get_query_results",
+  "arguments": {
+    "scheduleId": "schedule-123"
+  }
+}
+```
+
 ## Google Ads configuration
 
 To enable the real Google Ads API flow, define these environment variables in your `.env` file:
