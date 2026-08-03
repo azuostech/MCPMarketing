@@ -138,15 +138,31 @@ GOOGLE_ADS_LOGIN_CUSTOMER_ID=
 - `GOOGLE_ADS_CUSTOMER_ID`: the Google Ads customer ID you want to query.
 - `GOOGLE_ADS_LOGIN_CUSTOMER_ID`: the manager/customer ID used for login context, often the same as the customer ID.
 
+### Local OAuth helper
+
+A local helper is now included so you can complete the flow directly from this project.
+
+1. Make sure your `.env` contains `GOOGLE_ADS_CLIENT_ID` and `GOOGLE_ADS_CLIENT_SECRET`.
+2. Build the project:
+   ```bash
+   npm run build
+   ```
+3. Start the OAuth helper:
+   ```bash
+   npm run oauth:google-ads
+   ```
+4. Open the printed URL in your browser, approve the consent screen, and return to the terminal.
+5. The helper will exchange the authorization code for tokens and print the response.
+
 ### Example OAuth flow
 
 If you want to test the flow manually, use the standard OAuth 2.0 desktop-app flow:
 
 ```bash
-https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost&response_type=code&access_type=offline&scope=https://www.googleapis.com/auth/adwords&prompt=consent
+https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:3000/callback&response_type=code&access_type=offline&scope=https://www.googleapis.com/auth/adwords&prompt=consent
 ```
 
-Then exchange the returned authorization code for a refresh token using a local callback or a temporary helper script.
+Then exchange the returned authorization code for a refresh token using the local helper above.
 
 ### Important notes
 

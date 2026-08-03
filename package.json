@@ -6,11 +6,14 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "start:http": "node dist/httpServer.js",
+    "oauth:google-ads": "node dist/oauth/run.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "dotenv": "^16.4.2",
+    "express": "^4.21.2",
     "zod": "^3.24.4"
   },
   "devDependencies": {
