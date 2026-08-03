@@ -27,3 +27,5 @@ export const DataQueryInputSchema = z.object({
 export const GetQueryResultsInputSchema = z.object({
   scheduleId: z.string().describe('Identifier returned by the data_query tool when the query is async')
 });
+
+export const HealthCheckInputSchema = z.object({}).strict();

@@ -1,4 +1,5 @@
 import { getFieldCatalog, getGoogleAdsConfig, listGoogleAdsAccounts, queryGoogleAds } from '../lib/googleAds.js';
+import { getServerHealth } from '../lib/health.js';
 import { mockAccounts, mockDataSources, mockFields, mockQueryResult } from '../lib/mockData.js';
 
 const pendingResults = new Map<string, unknown>();
@@ -83,4 +84,8 @@ export async function handleGetQueryResults(scheduleId: string) {
     status: 'completed',
     result: cached
   };
+}
+
+export async function handleHealthCheck() {
+  return getServerHealth();
 }

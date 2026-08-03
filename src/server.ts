@@ -14,14 +14,16 @@ import {
   DataQueryInputSchema,
   DataSourceDiscoveryInputSchema,
   FieldDiscoveryInputSchema,
-  GetQueryResultsInputSchema
+  GetQueryResultsInputSchema,
+  HealthCheckInputSchema
 } from './lib/schemas.js';
 import {
   handleAccountsDiscovery,
   handleDataQuery,
   handleDataSourceDiscovery,
   handleFieldDiscovery,
-  handleGetQueryResults
+  handleGetQueryResults,
+  handleHealthCheck
 } from './tools/handlers.js';
 
 dotenv.config();
@@ -88,6 +90,11 @@ const tools: Tool[] = [
     name: 'get_query_results',
     description: 'Retrieve the result of a previously executed query by schedule ID',
     inputSchema: toMcpInputSchema(GetQueryResultsInputSchema)
+  },
+  {
+    name: 'health_check',
+    description: 'Return basic server health and capabilities information',
+    inputSchema: toMcpInputSchema(HealthCheckInputSchema)
   }
 ];
 
@@ -123,6 +130,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await handleGetQueryResults(parsed.scheduleId);
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
+      case 'health_check': {
+        const result = await handleHealthCheck();
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -145,3 +156,5 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+console.log('MCP Marketing Analytics ready. Use the inspector or Claude Desktop to connect.');
