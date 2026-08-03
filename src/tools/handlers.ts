@@ -1,12 +1,17 @@
 import {
+  disconnectGoogleAdsForUser,
   getFieldCatalog,
   getGoogleAdsConfig,
+  getGoogleAdsConfigForUser,
   getGoogleAdsConnectionStatus,
+  getGoogleAdsConnectionStatusForUser,
   listGoogleAdsAccounts,
-  queryGoogleAds
+  queryGoogleAds,
+  saveGoogleAdsAccountsForUser
 } from '../lib/googleAds.js';
 import { getServerHealth } from '../lib/health.js';
-import { mockAccounts, mockDataSources, mockFields, mockQueryResult } from '../lib/mockData.js';
+import { mockDataSources } from '../lib/mockData.js';
+import { createOpaqueToken } from '../auth/crypto.js';
 
 const pendingResults = new Map<string, unknown>();
 
@@ -23,23 +28,36 @@ export async function handleDataSourceDiscovery(search?: string) {
   };
 }
 
-export async function handleAccountsDiscovery(source?: string) {
-  const config = getGoogleAdsConfig();
-  const accounts = source === 'AW'
-    ? await listGoogleAdsAccounts(config)
-    : mockAccounts;
+async function resolveGoogleAdsConfig(userId?: string) {
+  return userId ? getGoogleAdsConfigForUser(userId) : getGoogleAdsConfig();
+}
+
+export async function handleAccountsDiscovery(source?: string, userId?: string) {
+  const normalizedSource = source ?? 'AW';
+  if (normalizedSource !== 'AW') {
+    throw new Error(`Unsupported marketing data source: ${normalizedSource}`);
+  }
+  const config = await resolveGoogleAdsConfig(userId);
+  const accounts = await listGoogleAdsAccounts(config);
+  if (userId) {
+    await saveGoogleAdsAccountsForUser(userId, accounts);
+  }
 
   return {
-    source: source ?? 'AW',
+    source: normalizedSource,
     accounts
   };
 }
 
 export async function handleFieldDiscovery(source?: string, search?: string) {
-  const fields = source === 'AW' ? getFieldCatalog(search) : mockFields;
+  const normalizedSource = source ?? 'AW';
+  if (normalizedSource !== 'AW') {
+    throw new Error(`Unsupported marketing data source: ${normalizedSource}`);
+  }
+  const fields = getFieldCatalog(search);
 
   return {
-    source: source ?? 'AW',
+    source: normalizedSource,
     fields
   };
 }
@@ -50,22 +68,14 @@ export async function handleDataQuery(input: {
   fields: string[];
   dateRange: { start: string; end: string };
   filters?: string[];
-}) {
-  const result = input.source === 'AW'
-    ? await queryGoogleAds(getGoogleAdsConfig(), input)
-    : {
-        ...mockQueryResult,
-        requested: {
-          source: input.source,
-          accounts: input.accounts,
-          fields: input.fields,
-          dateRange: input.dateRange,
-          filters: input.filters ?? []
-        }
-      };
+}, userId?: string) {
+  if (input.source !== 'AW') {
+    throw new Error(`Unsupported marketing data source: ${input.source}`);
+  }
+  const result = await queryGoogleAds(await resolveGoogleAdsConfig(userId), input);
 
-  const scheduleId = `schedule-${Date.now()}`;
-  pendingResults.set(scheduleId, result);
+  const scheduleId = `schedule-${createOpaqueToken(12)}`;
+  pendingResults.set(`${userId ?? 'local'}:${scheduleId}`, result);
 
   return {
     ...result,
@@ -74,8 +84,8 @@ export async function handleDataQuery(input: {
   };
 }
 
-export async function handleGetQueryResults(scheduleId: string) {
-  const cached = pendingResults.get(scheduleId);
+export async function handleGetQueryResults(scheduleId: string, userId?: string) {
+  const cached = pendingResults.get(`${userId ?? 'local'}:${scheduleId}`);
 
   if (!cached) {
     return {
@@ -96,6 +106,13 @@ export async function handleHealthCheck() {
   return getServerHealth();
 }
 
-export async function handleGoogleAdsConnectionStatus() {
-  return getGoogleAdsConnectionStatus();
+export async function handleGoogleAdsConnectionStatus(userId?: string) {
+  return userId ? getGoogleAdsConnectionStatusForUser(userId) : getGoogleAdsConnectionStatus();
+}
+
+export async function handleGoogleAdsDisconnect(userId?: string) {
+  if (!userId) {
+    throw new Error('Google Ads disconnect requires an authenticated MCP user.');
+  }
+  return disconnectGoogleAdsForUser(userId);
 }

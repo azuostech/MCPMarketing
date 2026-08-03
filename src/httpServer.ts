@@ -1,8 +1,18 @@
 import express from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  getOAuthProtectedResourceMetadataUrl,
+  mcpAuthRouter
+} from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, Tool } from '@modelcontextprotocol/sdk/types.js';
 import dotenv from 'dotenv';
+import {
+  getPublicBaseUrl,
+  isMcpAuthEnabled,
+  MarketingOAuthProvider
+} from './auth/provider.js';
 import { toMcpInputSchema } from './lib/mcpSchema.js';
 import {
   AccountsDiscoveryInputSchema,
@@ -11,6 +21,7 @@ import {
   FieldDiscoveryInputSchema,
   GetQueryResultsInputSchema,
   GoogleAdsConnectionStatusInputSchema,
+  GoogleAdsDisconnectInputSchema,
   HealthCheckInputSchema
 } from './lib/schemas.js';
 import {
@@ -20,6 +31,7 @@ import {
   handleFieldDiscovery,
   handleGetQueryResults,
   handleGoogleAdsConnectionStatus,
+  handleGoogleAdsDisconnect,
   handleHealthCheck
 } from './tools/handlers.js';
 
@@ -28,11 +40,41 @@ dotenv.config();
 export const app = express();
 app.use(express.json());
 
+const authEnabled = isMcpAuthEnabled();
+const publicBaseUrl = getPublicBaseUrl();
+const mcpResourceUrl = new URL('/mcp', publicBaseUrl);
+const oauthProvider = authEnabled ? new MarketingOAuthProvider(publicBaseUrl) : undefined;
+
+if (oauthProvider) {
+  app.use(mcpAuthRouter({
+    provider: oauthProvider,
+    issuerUrl: publicBaseUrl,
+    resourceServerUrl: mcpResourceUrl,
+    scopesSupported: ['mcp:tools'],
+    resourceName: 'Marketing Analytics MCP'
+  }));
+
+  app.get('/oauth/google/callback', async (req: any, res: any) => {
+    try {
+      const redirect = await oauthProvider.handleGoogleCallback(req.query);
+      res.redirect(302, redirect.href);
+    } catch (error) {
+      console.error('Google OAuth callback failed', error);
+      res.status(400).type('text/plain').send('Google Ads authorization failed. Please return to Claude and try again.');
+    }
+  });
+}
+
 const tools: Tool[] = [
   {
     name: 'google_ads_connection_status',
     description: 'Check whether Google Ads credentials are configured without exposing secret values',
     inputSchema: toMcpInputSchema(GoogleAdsConnectionStatusInputSchema)
+  },
+  {
+    name: 'google_ads_disconnect',
+    description: 'Revoke and disconnect the current user\'s Google Ads authorization',
+    inputSchema: toMcpInputSchema(GoogleAdsDisconnectInputSchema)
   },
   {
     name: 'data_source_discovery',
@@ -81,8 +123,11 @@ function createServer() {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
+    const userId = typeof extra.authInfo?.extra?.userId === 'string'
+      ? extra.authInfo.extra.userId
+      : undefined;
 
     try {
       switch (name) {
@@ -93,7 +138,7 @@ function createServer() {
         }
         case 'accounts_discovery': {
           const parsed = AccountsDiscoveryInputSchema.parse(args ?? {});
-          const result = await handleAccountsDiscovery(parsed.source);
+          const result = await handleAccountsDiscovery(parsed.source, userId);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         case 'field_discovery': {
@@ -103,12 +148,12 @@ function createServer() {
         }
         case 'data_query': {
           const parsed = DataQueryInputSchema.parse(args ?? {});
-          const result = await handleDataQuery(parsed);
+          const result = await handleDataQuery(parsed, userId);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         case 'get_query_results': {
           const parsed = GetQueryResultsInputSchema.parse(args ?? {});
-          const result = await handleGetQueryResults(parsed.scheduleId);
+          const result = await handleGetQueryResults(parsed.scheduleId, userId);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         case 'health_check': {
@@ -116,7 +161,11 @@ function createServer() {
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         case 'google_ads_connection_status': {
-          const result = await handleGoogleAdsConnectionStatus();
+          const result = await handleGoogleAdsConnectionStatus(userId);
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+        case 'google_ads_disconnect': {
+          const result = await handleGoogleAdsDisconnect(userId);
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         default:
@@ -134,7 +183,7 @@ function createServer() {
   return server;
 }
 
-app.post('/mcp', async (req: any, res: any) => {
+const mcpPostHandler = async (req: any, res: any) => {
   try {
     const server = createServer();
     const transport = new StreamableHTTPServerTransport({
@@ -154,7 +203,17 @@ app.post('/mcp', async (req: any, res: any) => {
     console.error(error);
     res.status(500).json({ error: 'Failed to handle MCP request' });
   }
-});
+};
+
+if (oauthProvider) {
+  app.post('/mcp', requireBearerAuth({
+    verifier: oauthProvider,
+    requiredScopes: ['mcp:tools'],
+    resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpResourceUrl)
+  }), mcpPostHandler);
+} else {
+  app.post('/mcp', mcpPostHandler);
+}
 
 app.get('/health', (_req: any, res: any) => {
   res.json({ ok: true, service: 'mcp-marketing-analytics' });

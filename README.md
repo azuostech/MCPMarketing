@@ -106,6 +106,16 @@ Retrieve query result:
 
 ## Google Ads configuration
 
+### Public multi-tenant connector
+
+Production uses OAuth per user. The service keeps only its Google Ads developer
+token and Google OAuth application credentials in Vercel; each user's Google
+refresh token is encrypted and stored separately in Supabase. See
+[`docs/multi-tenant-oauth.md`](docs/multi-tenant-oauth.md) for database migration,
+redirect URI, environment configuration, and rollout instructions.
+
+### Local single-user mode
+
 To enable the real Google Ads API flow, define these environment variables in your `.env` file:
 
 ```bash

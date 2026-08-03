@@ -1,6 +1,8 @@
 declare const process: { env: Record<string, string | undefined> };
 
 import { mockAccounts, mockQueryResult } from './mockData.js';
+import { selectOne, updateRows, upsertRow } from '../auth/database.js';
+import { decryptSecret } from '../auth/crypto.js';
 
 export type GoogleAdsConfig = {
   developerToken?: string;
@@ -19,6 +21,7 @@ export type GoogleAdsAccount = {
   status: string;
   manager?: boolean;
   level?: number;
+  login_customer_id?: string;
 };
 
 const DEFAULT_API_VERSION = 'v25';
@@ -76,7 +79,13 @@ export function hasGoogleAdsConfig(config: GoogleAdsConfig): boolean {
 }
 
 export function getGoogleAdsConnectionStatus(config = getGoogleAdsConfig()) {
-  const missing = REQUIRED_AUTH_ENV.filter((name) => !getEnvValue(name));
+  const values: Record<(typeof REQUIRED_AUTH_ENV)[number], string | undefined> = {
+    GOOGLE_ADS_DEVELOPER_TOKEN: config.developerToken,
+    GOOGLE_ADS_CLIENT_ID: config.clientId,
+    GOOGLE_ADS_CLIENT_SECRET: config.clientSecret,
+    GOOGLE_ADS_REFRESH_TOKEN: config.refreshToken
+  };
+  const missing = REQUIRED_AUTH_ENV.filter((name) => !values[name]);
 
   return {
     provider: 'google_ads',
@@ -87,6 +96,73 @@ export function getGoogleAdsConnectionStatus(config = getGoogleAdsConfig()) {
     loginCustomerIdConfigured: Boolean(config.loginCustomerId),
     missing
   };
+}
+
+type StoredGoogleAdsConnection = {
+  encrypted_refresh_token: string;
+  selected_customer_id?: string;
+  login_customer_id?: string;
+  status: string;
+};
+
+export async function getGoogleAdsConfigForUser(userId: string): Promise<GoogleAdsConfig> {
+  const connection = await selectOne<StoredGoogleAdsConnection>('google_ads_connections', {
+    user_id: userId,
+    status: 'active'
+  });
+  if (!connection) {
+    throw new Error('No active Google Ads connection exists for this user. Reconnect the MCP connector.');
+  }
+  const base = getGoogleAdsConfig();
+  return {
+    ...base,
+    refreshToken: decryptSecret(connection.encrypted_refresh_token),
+    customerId: connection.selected_customer_id,
+    loginCustomerId: connection.login_customer_id,
+    mockMode: false
+  };
+}
+
+export async function getGoogleAdsConnectionStatusForUser(userId: string) {
+  const connection = await selectOne<StoredGoogleAdsConnection>('google_ads_connections', { user_id: userId });
+  if (!connection) {
+    const base = getGoogleAdsConnectionStatus({ ...getGoogleAdsConfig(), refreshToken: undefined, mockMode: false });
+    return { ...base, connected: false, mode: 'unconfigured' };
+  }
+  const config: GoogleAdsConfig = {
+    ...getGoogleAdsConfig(),
+    refreshToken: 'stored',
+    customerId: connection.selected_customer_id,
+    loginCustomerId: connection.login_customer_id,
+    mockMode: false
+  };
+  return {
+    ...getGoogleAdsConnectionStatus(config),
+    connected: connection.status === 'active',
+    connectionStatus: connection.status
+  };
+}
+
+export async function disconnectGoogleAdsForUser(userId: string) {
+  const connection = await selectOne<StoredGoogleAdsConnection>('google_ads_connections', { user_id: userId });
+  if (!connection) {
+    return { disconnected: true, alreadyDisconnected: true };
+  }
+  let googleRevocationAccepted = false;
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: decryptSecret(connection.encrypted_refresh_token) }).toString()
+    });
+    googleRevocationAccepted = response.ok;
+  } finally {
+    await updateRows('google_ads_connections', { user_id: userId }, {
+      status: 'revoked',
+      updated_at: new Date().toISOString()
+    });
+  }
+  return { disconnected: true, googleRevocationAccepted };
 }
 
 export async function listGoogleAdsAccounts(config: GoogleAdsConfig): Promise<GoogleAdsAccount[]> {
@@ -111,8 +187,11 @@ export async function listGoogleAdsAccounts(config: GoogleAdsConfig): Promise<Go
     .map((resourceName) => normalizeCustomerId(resourceName.replace('customers/', '')))
     .filter(Boolean);
 
-  if (config.loginCustomerId) {
-    const managerId = normalizeCustomerId(config.loginCustomerId);
+  const discoveryRoots = config.loginCustomerId
+    ? [normalizeCustomerId(config.loginCustomerId)]
+    : accessibleIds;
+  const discoveredAccounts: GoogleAdsAccount[] = [];
+  for (const managerId of discoveryRoots) {
     const query = [
       'SELECT customer_client.id, customer_client.descriptive_name, customer_client.status,',
       'customer_client.manager, customer_client.level',
@@ -120,22 +199,27 @@ export async function listGoogleAdsAccounts(config: GoogleAdsConfig): Promise<Go
       'WHERE customer_client.level <= 1',
       'ORDER BY customer_client.level, customer_client.id'
     ].join(' ');
-    const chunks = await searchGoogleAds(config, token, managerId, query);
-    const accounts = flattenSearchResults(chunks)
-      .map((result) => result.customerClient)
-      .filter((account): account is Record<string, unknown> => Boolean(account && typeof account === 'object'))
-      .map((account) => ({
-        account_id: normalizeCustomerId(String(account.id ?? '')),
-        name: String(account.descriptiveName ?? account.id ?? 'Unnamed account'),
-        status: String(account.status ?? 'UNKNOWN'),
-        manager: Boolean(account.manager),
-        level: Number(account.level ?? 0)
-      }))
-      .filter((account) => Boolean(account.account_id));
-
-    if (accounts.length > 0) {
-      return accounts;
+    try {
+      const chunks = await searchGoogleAds({ ...config, loginCustomerId: managerId }, token, managerId, query);
+      discoveredAccounts.push(...flattenSearchResults(chunks)
+        .map((result) => result.customerClient)
+        .filter((account): account is Record<string, unknown> => Boolean(account && typeof account === 'object'))
+        .map((account) => ({
+          account_id: normalizeCustomerId(String(account.id ?? '')),
+          name: String(account.descriptiveName ?? account.id ?? 'Unnamed account'),
+          status: String(account.status ?? 'UNKNOWN'),
+          manager: Boolean(account.manager),
+          level: Number(account.level ?? 0),
+          login_customer_id: managerId
+        }))
+        .filter((account) => Boolean(account.account_id)));
+    } catch (error) {
+      console.warn(`Unable to enumerate customer clients through ${managerId}`, error);
     }
+  }
+
+  if (discoveredAccounts.length > 0) {
+    return Array.from(new Map(discoveredAccounts.map((account) => [account.account_id, account])).values());
   }
 
   return accessibleIds.map((accountId) => ({
@@ -143,6 +227,36 @@ export async function listGoogleAdsAccounts(config: GoogleAdsConfig): Promise<Go
     name: `Google Ads account ${accountId}`,
     status: 'ACCESSIBLE'
   }));
+}
+
+export async function saveGoogleAdsAccountsForUser(userId: string, accounts: GoogleAdsAccount[]) {
+  const connection = await selectOne<{ id: string; login_customer_id?: string }>('google_ads_connections', {
+    user_id: userId
+  });
+  if (!connection) {
+    throw new Error('Google Ads connection was not found for this user.');
+  }
+  for (const account of accounts) {
+    await upsertRow('google_ads_accounts', {
+      connection_id: connection.id,
+      customer_id: account.account_id,
+      descriptive_name: account.name,
+      status: account.status,
+      manager: account.manager ?? false,
+      level: account.level,
+      updated_at: new Date().toISOString()
+    }, 'connection_id,customer_id');
+  }
+  if (!connection.login_customer_id) {
+    const manager = accounts.find((account) => account.manager && account.level === 0)
+      ?? accounts.find((account) => account.login_customer_id);
+    if (manager?.login_customer_id) {
+      await updateRows('google_ads_connections', { user_id: userId }, {
+        login_customer_id: manager.login_customer_id,
+        updated_at: new Date().toISOString()
+      });
+    }
+  }
 }
 
 export async function queryGoogleAds(config: GoogleAdsConfig, input: {

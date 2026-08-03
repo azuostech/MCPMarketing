@@ -5,6 +5,7 @@ export function getServerHealth() {
     version: '0.1.0',
     capabilities: [
       'google_ads_connection_status',
+      'google_ads_disconnect',
       'data_source_discovery',
       'accounts_discovery',
       'field_discovery',

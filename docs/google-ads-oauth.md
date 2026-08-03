@@ -1,5 +1,9 @@
 # Google Ads OAuth setup guide
 
+> This document describes the local single-user helper. For the public Claude
+> connector, use [`multi-tenant-oauth.md`](multi-tenant-oauth.md); production users
+> authorize their own Google accounts and no user refresh token is stored in Vercel.
+
 This guide collects the main steps needed to prepare the real OAuth flow for the Google Ads integration.
 
 ## 1. Google Cloud project

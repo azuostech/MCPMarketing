@@ -6,6 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "start": "node dist/server.js",
     "start:http": "node dist/httpServer.js",
     "oauth:google-ads": "node dist/oauth/run.js"

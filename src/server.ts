@@ -16,6 +16,7 @@ import {
   FieldDiscoveryInputSchema,
   GetQueryResultsInputSchema,
   GoogleAdsConnectionStatusInputSchema,
+  GoogleAdsDisconnectInputSchema,
   HealthCheckInputSchema
 } from './lib/schemas.js';
 import {
@@ -25,6 +26,7 @@ import {
   handleFieldDiscovery,
   handleGetQueryResults,
   handleGoogleAdsConnectionStatus,
+  handleGoogleAdsDisconnect,
   handleHealthCheck
 } from './tools/handlers.js';
 
@@ -47,6 +49,11 @@ const tools: Tool[] = [
     name: 'google_ads_connection_status',
     description: 'Check whether Google Ads credentials are configured without exposing secret values',
     inputSchema: toMcpInputSchema(GoogleAdsConnectionStatusInputSchema)
+  },
+  {
+    name: 'google_ads_disconnect',
+    description: 'Revoke and disconnect the current user\'s Google Ads authorization',
+    inputSchema: toMcpInputSchema(GoogleAdsDisconnectInputSchema)
   },
   {
     name: 'data_source_discovery',
@@ -118,6 +125,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       case 'google_ads_connection_status': {
         const result = await handleGoogleAdsConnectionStatus();
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      }
+      case 'google_ads_disconnect': {
+        const result = await handleGoogleAdsDisconnect();
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
       default:
