@@ -117,13 +117,42 @@ GOOGLE_ADS_CUSTOMER_ID=
 GOOGLE_ADS_LOGIN_CUSTOMER_ID=
 ```
 
-### How to generate a Google Ads refresh token
+### OAuth 2.0 setup for Google Ads
 
-1. Create a Google Cloud project and enable the Google Ads API.
-2. Create OAuth2 credentials for a desktop app.
-3. Request the OAuth scopes needed for Google Ads access.
-4. Complete the OAuth flow and store the refresh token in `GOOGLE_ADS_REFRESH_TOKEN`.
-5. Add your manager/customer ID values in the corresponding environment variables.
+1. Create or select a Google Cloud project.
+2. Enable the Google Ads API in the Google Cloud console.
+3. Create OAuth 2.0 Client ID credentials for a desktop application.
+4. Add the following OAuth scopes to the consent screen:
+   - `https://www.googleapis.com/auth/adwords`
+5. Use a redirect URI such as:
+   - `http://localhost`
+6. Complete the OAuth authorization flow and store the generated refresh token in `GOOGLE_ADS_REFRESH_TOKEN`.
+7. Insert your Google Ads developer token and customer IDs in the environment variables above.
+
+### Recommended values for the environment file
+
+- `GOOGLE_ADS_DEVELOPER_TOKEN`: your Google Ads manager/developer token.
+- `GOOGLE_ADS_CLIENT_ID`: OAuth client ID from Google Cloud.
+- `GOOGLE_ADS_CLIENT_SECRET`: OAuth client secret from Google Cloud.
+- `GOOGLE_ADS_REFRESH_TOKEN`: refresh token obtained after the OAuth flow.
+- `GOOGLE_ADS_CUSTOMER_ID`: the Google Ads customer ID you want to query.
+- `GOOGLE_ADS_LOGIN_CUSTOMER_ID`: the manager/customer ID used for login context, often the same as the customer ID.
+
+### Example OAuth flow
+
+If you want to test the flow manually, use the standard OAuth 2.0 desktop-app flow:
+
+```bash
+https://accounts.google.com/o/oauth2/v2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost&response_type=code&access_type=offline&scope=https://www.googleapis.com/auth/adwords&prompt=consent
+```
+
+Then exchange the returned authorization code for a refresh token using a local callback or a temporary helper script.
+
+### Important notes
+
+- The Google Ads API requires a valid developer token and OAuth credentials.
+- The current implementation uses mock data whenever the required credentials are missing.
+- Once the credentials are present, the server will attempt to call the real Google Ads API endpoints.
 
 ## Notes
 
