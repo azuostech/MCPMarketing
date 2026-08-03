@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mcp-marketing-analytics": {
+      "command": "node",
+      "args": ["/Users/jacksonsouza/azuos_projects/MCPMarketing/dist/server.js"],
+      "env": {}
+    }
+  }
+}

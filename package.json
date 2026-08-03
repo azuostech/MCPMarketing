@@ -1,0 +1,20 @@
+{
+  "name": "mcp-marketing-analytics",
+  "version": "0.1.0",
+  "description": "MCP server for marketing analytics data discovery and querying",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.4.2",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.8.3"
+  }
+}

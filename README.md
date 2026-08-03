@@ -1,0 +1,62 @@
+# MCP Marketing Analytics
+
+A minimal MCP server for marketing analytics data discovery and querying, starting with a Google Ads integration layer.
+
+## Features
+
+- Data source discovery
+- Google Ads account discovery
+- Field discovery for metrics and dimensions
+- Data query execution with mock fallback and real Google Ads support when configured
+
+## Local setup
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy the environment template:
+   ```bash
+   cp .env.example .env
+   ```
+3. Build the project:
+   ```bash
+   npm run build
+   ```
+4. Start the server:
+   ```bash
+   npm start
+   ```
+
+## Testing with MCP Inspector
+
+Run the inspector against the local server:
+
+```bash
+npx @modelcontextprotocol/inspector node dist/server.js
+```
+
+## Google Ads configuration
+
+To enable the real Google Ads API flow, define these environment variables in your `.env` file:
+
+```bash
+GOOGLE_ADS_DEVELOPER_TOKEN=
+GOOGLE_ADS_CLIENT_ID=
+GOOGLE_ADS_CLIENT_SECRET=
+GOOGLE_ADS_REFRESH_TOKEN=
+GOOGLE_ADS_CUSTOMER_ID=
+GOOGLE_ADS_LOGIN_CUSTOMER_ID=
+```
+
+### How to generate a Google Ads refresh token
+
+1. Create a Google Cloud project and enable the Google Ads API.
+2. Create OAuth2 credentials for a desktop app.
+3. Request the OAuth scopes needed for Google Ads access.
+4. Complete the OAuth flow and store the refresh token in `GOOGLE_ADS_REFRESH_TOKEN`.
+5. Add your manager/customer ID values in the corresponding environment variables.
+
+## Notes
+
+The current implementation uses mock responses automatically when the Google Ads credentials are missing, so the MCP structure can be exercised immediately.
