@@ -34,6 +34,7 @@ declare const process: { env: Record<string, string | undefined> };
 
 const GOOGLE_ADS_SCOPE = 'https://www.googleapis.com/auth/adwords';
 const MCP_SCOPE = 'mcp:tools';
+const GOOGLE_RECONNECT_STATE_PREFIX = 'google-ads-reconnect:';
 const AUTHORIZATION_CODE_TTL_MS = 10 * 60 * 1000;
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -162,18 +163,30 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
       expires_at: new Date(Date.now() + AUTHORIZATION_CODE_TTL_MS).toISOString()
     });
 
-    const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    googleUrl.search = new URLSearchParams({
-      client_id: requiredEnv('GOOGLE_ADS_CLIENT_ID'),
-      redirect_uri: this.googleCallbackUrl.href,
-      response_type: 'code',
-      access_type: 'offline',
-      include_granted_scopes: 'true',
-      prompt: 'consent',
-      scope: `openid email profile ${GOOGLE_ADS_SCOPE}`,
-      state: googleState
-    }).toString();
-    res.redirect(302, googleUrl.href);
+    res.redirect(302, this.buildGoogleAuthorizationUrl(googleState).href);
+  }
+
+  async createGoogleAdsReconnectUrl(clientId: string, userId: string) {
+    const [client, user] = await Promise.all([
+      this.clientsStore.getClient(clientId),
+      selectOne<MarketingUserRow>('marketing_users', { id: userId })
+    ]);
+    if (!client || !user) {
+      throw new InvalidRequestError('The authenticated MCP connection could not be found.');
+    }
+
+    const googleState = createOpaqueToken();
+    await insertRow<PendingAuthorizationRow>('mcp_oauth_pending', {
+      state_hash: hashOpaqueToken(googleState),
+      client_id: clientId,
+      redirect_uri: this.googleReconnectCompleteUrl.href,
+      code_challenge: 'google-ads-reconnect',
+      mcp_state: `${GOOGLE_RECONNECT_STATE_PREFIX}${userId}`,
+      scopes: [MCP_SCOPE],
+      resource: this.mcpResourceUrl.href,
+      expires_at: new Date(Date.now() + AUTHORIZATION_CODE_TTL_MS).toISOString()
+    });
+    return this.buildGoogleAuthorizationUrl(googleState);
   }
 
   async challengeForAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
@@ -280,16 +293,33 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
       return this.createClientErrorRedirect(pending, 'invalid_request');
     }
 
+    const isReconnect = pending.redirect_uri === this.googleReconnectCompleteUrl.href
+      && pending.mcp_state?.startsWith(GOOGLE_RECONNECT_STATE_PREFIX);
+    const reconnectUserId = isReconnect
+      ? pending.mcp_state?.slice(GOOGLE_RECONNECT_STATE_PREFIX.length)
+      : undefined;
     const googleTokens = await this.exchangeGoogleCode(query.code);
+    const grantedScopes = await this.getGoogleGrantedScopes(googleTokens.access_token, googleTokens.scope);
+    if (!grantedScopes.includes(GOOGLE_ADS_SCOPE)) {
+      throw new InvalidRequestError('Google did not grant the required Google Ads scope.');
+    }
     const profile = await this.getGoogleProfile(googleTokens.access_token);
-    const user = await upsertRow<MarketingUserRow>('marketing_users', {
-      google_subject: profile.sub,
-      email: profile.email,
-      display_name: profile.name,
-      updated_at: new Date().toISOString()
-    }, 'google_subject');
+    const user = reconnectUserId
+      ? await selectOne<MarketingUserRow>('marketing_users', { id: reconnectUserId })
+      : await upsertRow<MarketingUserRow>('marketing_users', {
+          google_subject: profile.sub,
+          email: profile.email,
+          display_name: profile.name,
+          updated_at: new Date().toISOString()
+        }, 'google_subject');
+    if (!user || user.google_subject !== profile.sub) {
+      throw new InvalidRequestError('Authorize the same Google account previously connected to this MCP user.');
+    }
 
     const existingConnection = await selectOne<GoogleConnectionRow>('google_ads_connections', { user_id: user.id });
+    if (isReconnect && !googleTokens.refresh_token) {
+      throw new InvalidRequestError('Google did not return a new refresh token. Remove the app grant and try again.');
+    }
     const encryptedRefreshToken = googleTokens.refresh_token
       ? encryptSecret(googleTokens.refresh_token)
       : existingConnection?.encrypted_refresh_token;
@@ -299,10 +329,14 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
     await upsertRow<GoogleConnectionRow>('google_ads_connections', {
       user_id: user.id,
       encrypted_refresh_token: encryptedRefreshToken,
-      scopes: (googleTokens.scope ?? GOOGLE_ADS_SCOPE).split(' '),
+      scopes: grantedScopes,
       status: 'active',
       updated_at: new Date().toISOString()
     }, 'user_id');
+
+    if (isReconnect) {
+      return this.googleReconnectCompleteUrl;
+    }
 
     const authorizationCode = createOpaqueToken();
     await insertRow<AuthorizationCodeRow>('mcp_oauth_codes', {
@@ -327,8 +361,27 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
     return new URL('/oauth/google/callback', this.baseUrl);
   }
 
+  private get googleReconnectCompleteUrl() {
+    return new URL('/oauth/google/complete', this.baseUrl);
+  }
+
   private get mcpResourceUrl() {
     return new URL('/mcp', this.baseUrl);
+  }
+
+  private buildGoogleAuthorizationUrl(state: string) {
+    const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    googleUrl.search = new URLSearchParams({
+      client_id: requiredEnv('GOOGLE_ADS_CLIENT_ID'),
+      redirect_uri: this.googleCallbackUrl.href,
+      response_type: 'code',
+      access_type: 'offline',
+      include_granted_scopes: 'true',
+      prompt: 'consent',
+      scope: `openid email profile ${GOOGLE_ADS_SCOPE}`,
+      state
+    }).toString();
+    return googleUrl;
   }
 
   private validateResource(resource?: URL) {
@@ -417,6 +470,20 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
       throw new InvalidRequestError('Google profile response is incomplete.');
     }
     return { sub: profile.sub, email: profile.email, name: profile.name };
+  }
+
+  private async getGoogleGrantedScopes(accessToken: string, tokenResponseScope?: string) {
+    if (tokenResponseScope) {
+      return tokenResponseScope.split(' ').filter(Boolean);
+    }
+    const tokenInfoUrl = new URL('https://oauth2.googleapis.com/tokeninfo');
+    tokenInfoUrl.searchParams.set('access_token', accessToken);
+    const response = await fetch(tokenInfoUrl);
+    if (!response.ok) {
+      throw new InvalidRequestError(`Google token scope validation failed (${response.status}).`);
+    }
+    const payload = await response.json() as { scope?: string };
+    return (payload.scope ?? '').split(' ').filter(Boolean);
   }
 
   private createClientErrorRedirect(pending: PendingAuthorizationRow, error: string) {

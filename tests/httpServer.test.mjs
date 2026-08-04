@@ -12,6 +12,7 @@ test('publishes the complete Marketing Analytics tool catalog', async () => {
     tools.map((tool) => tool.name),
     [
       'google_ads_connection_status',
+      'google_ads_reconnect',
       'google_ads_disconnect',
       'data_source_discovery',
       'accounts_discovery',

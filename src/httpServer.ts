@@ -22,6 +22,7 @@ import {
   GetQueryResultsInputSchema,
   GoogleAdsConnectionStatusInputSchema,
   GoogleAdsDisconnectInputSchema,
+  GoogleAdsReconnectInputSchema,
   HealthCheckInputSchema
 } from './lib/schemas.js';
 import {
@@ -74,6 +75,11 @@ export const tools: Tool[] = [
     name: 'google_ads_connection_status',
     description: 'Check whether Google Ads credentials are configured without exposing secret values',
     inputSchema: toMcpInputSchema(GoogleAdsConnectionStatusInputSchema)
+  },
+  {
+    name: 'google_ads_reconnect',
+    description: 'Create a secure, short-lived Google authorization link to reconnect the current user\'s Google Ads account',
+    inputSchema: toMcpInputSchema(GoogleAdsReconnectInputSchema)
   },
   {
     name: 'google_ads_disconnect',
@@ -132,6 +138,7 @@ function createServer() {
     const userId = typeof extra.authInfo?.extra?.userId === 'string'
       ? extra.authInfo.extra.userId
       : undefined;
+    const clientId = extra.authInfo?.clientId;
 
     try {
       switch (name) {
@@ -166,6 +173,19 @@ function createServer() {
         }
         case 'google_ads_connection_status': {
           const result = await handleGoogleAdsConnectionStatus(userId);
+          return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        }
+        case 'google_ads_reconnect': {
+          GoogleAdsReconnectInputSchema.parse(args ?? {});
+          if (!oauthProvider || !userId || !clientId) {
+            throw new Error('Google Ads reconnect requires an authenticated MCP user.');
+          }
+          const authorizationUrl = await oauthProvider.createGoogleAdsReconnectUrl(clientId, userId);
+          const result = {
+            authorization_url: authorizationUrl.href,
+            expires_in_seconds: 600,
+            instructions: 'Open the authorization URL, approve Google Ads access, then run google_ads_connection_status again.'
+          };
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         case 'google_ads_disconnect': {
@@ -221,6 +241,14 @@ if (oauthProvider) {
 
 app.get('/health', (_req: any, res: any) => {
   res.json({ ok: true, service: 'mcp-marketing-analytics' });
+});
+
+app.get('/oauth/google/complete', (_req: any, res: any) => {
+  res.type('html').send(`<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Google Ads conectado</title></head><body style="font-family:system-ui;max-width:640px;margin:64px auto;padding:0 24px">
+<h1>Google Ads conectado</h1><p>A autorização foi atualizada. Você já pode fechar esta janela e voltar ao Claude.</p>
+</body></html>`);
 });
 
 if (process.env.VERCEL !== '1') {

@@ -32,4 +32,6 @@ export const HealthCheckInputSchema = z.object({}).strict();
 
 export const GoogleAdsConnectionStatusInputSchema = z.object({}).strict();
 
+export const GoogleAdsReconnectInputSchema = z.object({}).strict();
+
 export const GoogleAdsDisconnectInputSchema = z.object({}).strict();

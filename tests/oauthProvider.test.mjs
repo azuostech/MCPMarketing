@@ -148,6 +148,18 @@ test('completes MCP OAuth through Google and isolates a user connection', async 
   assert.equal(googleConfig.developerToken, 'developer-token');
   assert.notEqual(table('google_ads_connections')[0].encrypted_refresh_token, googleConfig.refreshToken);
 
+  const reconnectUrl = await provider.createGoogleAdsReconnectUrl(client.client_id, authInfo.extra.userId);
+  assert.equal(reconnectUrl.origin, 'https://accounts.google.com');
+  assert.match(reconnectUrl.searchParams.get('scope'), /googleapis\.com\/auth\/adwords/);
+  const reconnectRedirect = await provider.handleGoogleCallback({
+    state: reconnectUrl.searchParams.get('state'),
+    code: 'google-reconnect-code'
+  });
+  assert.equal(reconnectRedirect.href, 'https://mcp.example.com/oauth/google/complete');
+  const reconnectedGoogleConfig = await getGoogleAdsConfigForUser(authInfo.extra.userId);
+  assert.equal(reconnectedGoogleConfig.refreshToken, 'google-refresh-google-reconnect-code');
+  assert.equal(table('google_ads_connections')[0].status, 'active');
+
   await assert.rejects(
     provider.exchangeAuthorizationCode(client, authorizationCode),
     /Invalid or expired authorization code/
