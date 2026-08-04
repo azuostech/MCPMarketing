@@ -186,7 +186,10 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
       resource: this.mcpResourceUrl.href,
       expires_at: new Date(Date.now() + AUTHORIZATION_CODE_TTL_MS).toISOString()
     });
-    return this.buildGoogleAuthorizationUrl(googleState);
+    // Reconnection is already bound to an authenticated MCP user through a
+    // one-time state. Request only Google Ads here so granular consent cannot
+    // leave the connector with identity scopes but without Ads access.
+    return this.buildGoogleAuthorizationUrl(googleState, GOOGLE_ADS_SCOPE);
   }
 
   async challengeForAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
@@ -303,17 +306,11 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
     if (!grantedScopes.includes(GOOGLE_ADS_SCOPE)) {
       throw new InvalidRequestError('Google did not grant the required Google Ads scope.');
     }
-    const profile = await this.getGoogleProfile(googleTokens.access_token);
     const user = reconnectUserId
       ? await selectOne<MarketingUserRow>('marketing_users', { id: reconnectUserId })
-      : await upsertRow<MarketingUserRow>('marketing_users', {
-          google_subject: profile.sub,
-          email: profile.email,
-          display_name: profile.name,
-          updated_at: new Date().toISOString()
-        }, 'google_subject');
-    if (!user || user.google_subject !== profile.sub) {
-      throw new InvalidRequestError('Authorize the same Google account previously connected to this MCP user.');
+      : await this.upsertGoogleUser(googleTokens.access_token);
+    if (!user) {
+      throw new InvalidRequestError('The authenticated MCP user could not be found.');
     }
 
     const existingConnection = await selectOne<GoogleConnectionRow>('google_ads_connections', { user_id: user.id });
@@ -369,7 +366,10 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
     return new URL('/mcp', this.baseUrl);
   }
 
-  private buildGoogleAuthorizationUrl(state: string) {
+  private buildGoogleAuthorizationUrl(
+    state: string,
+    scope = `openid email profile ${GOOGLE_ADS_SCOPE}`
+  ) {
     const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     googleUrl.search = new URLSearchParams({
       client_id: requiredEnv('GOOGLE_ADS_CLIENT_ID'),
@@ -378,7 +378,7 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
       access_type: 'offline',
       include_granted_scopes: 'true',
       prompt: 'consent',
-      scope: `openid email profile ${GOOGLE_ADS_SCOPE}`,
+      scope,
       state
     }).toString();
     return googleUrl;
@@ -470,6 +470,16 @@ export class MarketingOAuthProvider implements OAuthServerProvider {
       throw new InvalidRequestError('Google profile response is incomplete.');
     }
     return { sub: profile.sub, email: profile.email, name: profile.name };
+  }
+
+  private async upsertGoogleUser(accessToken: string) {
+    const profile = await this.getGoogleProfile(accessToken);
+    return upsertRow<MarketingUserRow>('marketing_users', {
+      google_subject: profile.sub,
+      email: profile.email,
+      display_name: profile.name,
+      updated_at: new Date().toISOString()
+    }, 'google_subject');
   }
 
   private async getGoogleGrantedScopes(accessToken: string, tokenResponseScope?: string) {

@@ -65,7 +65,11 @@ if (oauthProvider) {
       res.redirect(302, redirect.href);
     } catch (error) {
       console.error('Google OAuth callback failed', error);
-      res.status(400).type('text/plain').send('Google Ads authorization failed. Please return to Claude and try again.');
+      const missingAdsScope = error instanceof Error
+        && error.message.includes('required Google Ads scope');
+      res.status(400).type('text/plain').send(missingAdsScope
+        ? 'Google Ads permission was not granted. Return to Claude, request a new authorization link, and approve Google Ads access.'
+        : 'Google Ads authorization failed. Please return to Claude and try again.');
     }
   });
 }

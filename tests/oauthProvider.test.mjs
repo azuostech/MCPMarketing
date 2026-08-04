@@ -44,7 +44,9 @@ globalThis.fetch = async (input, init = {}) => {
     return Response.json({
       access_token: `google-access-${code}`,
       refresh_token: `google-refresh-${code}`,
-      scope: 'openid email profile https://www.googleapis.com/auth/adwords'
+      scope: code === 'google-no-ads-code'
+        ? 'openid email profile'
+        : 'openid email profile https://www.googleapis.com/auth/adwords'
     });
   }
   if (url.hostname === 'openidconnect.googleapis.com') {
@@ -148,9 +150,18 @@ test('completes MCP OAuth through Google and isolates a user connection', async 
   assert.equal(googleConfig.developerToken, 'developer-token');
   assert.notEqual(table('google_ads_connections')[0].encrypted_refresh_token, googleConfig.refreshToken);
 
+  const rejectedReconnectUrl = await provider.createGoogleAdsReconnectUrl(client.client_id, authInfo.extra.userId);
+  await assert.rejects(
+    provider.handleGoogleCallback({
+      state: rejectedReconnectUrl.searchParams.get('state'),
+      code: 'google-no-ads-code'
+    }),
+    /required Google Ads scope/
+  );
+
   const reconnectUrl = await provider.createGoogleAdsReconnectUrl(client.client_id, authInfo.extra.userId);
   assert.equal(reconnectUrl.origin, 'https://accounts.google.com');
-  assert.match(reconnectUrl.searchParams.get('scope'), /googleapis\.com\/auth\/adwords/);
+  assert.equal(reconnectUrl.searchParams.get('scope'), 'https://www.googleapis.com/auth/adwords');
   const reconnectRedirect = await provider.handleGoogleCallback({
     state: reconnectUrl.searchParams.get('state'),
     code: 'google-reconnect-code'
