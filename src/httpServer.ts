@@ -73,7 +73,7 @@ if (oauthProvider) {
 export const tools: Tool[] = [
   {
     name: 'google_ads_connection_status',
-    description: 'Check whether Google Ads credentials are configured without exposing secret values',
+    description: 'Check whether Google Ads credentials are configured and, when disconnected, return a secure reconnection link without exposing secret values',
     inputSchema: toMcpInputSchema(GoogleAdsConnectionStatusInputSchema)
   },
   {
@@ -173,6 +173,22 @@ function createServer() {
         }
         case 'google_ads_connection_status': {
           const result = await handleGoogleAdsConnectionStatus(userId);
+          if (oauthProvider && userId && clientId && 'connected' in result && result.connected === false) {
+            const authorizationUrl = await oauthProvider.createGoogleAdsReconnectUrl(clientId, userId);
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  ...result,
+                  reconnect: {
+                    authorization_url: authorizationUrl.href,
+                    expires_in_seconds: 600,
+                    instructions: 'Open this URL, approve Google Ads access, then run google_ads_connection_status again.'
+                  }
+                }, null, 2)
+              }]
+            };
+          }
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         }
         case 'google_ads_reconnect': {
