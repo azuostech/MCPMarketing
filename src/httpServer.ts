@@ -38,6 +38,10 @@ import {
 dotenv.config();
 
 export const app = express();
+// Vercel terminates TLS and forwards the original client address. The OAuth
+// router uses express-rate-limit, which must be told to trust that first proxy
+// hop or it treats every forwarded request as a configuration error.
+app.set('trust proxy', 1);
 app.use(express.json());
 
 const authEnabled = isMcpAuthEnabled();
@@ -65,7 +69,7 @@ if (oauthProvider) {
   });
 }
 
-const tools: Tool[] = [
+export const tools: Tool[] = [
   {
     name: 'google_ads_connection_status',
     description: 'Check whether Google Ads credentials are configured without exposing secret values',
